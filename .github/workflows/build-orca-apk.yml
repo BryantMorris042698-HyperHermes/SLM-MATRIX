@@ -96,7 +96,10 @@ jobs:
           path: orca-flutter/dist/*.apk
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/orca-v')
+        # Only publish a real release when the build is properly signed —
+        # a debug-signed APK can't be installed over by the in-app updater.
+        # A tag build without signing secrets still uploads the artifact above.
+        if: startsWith(github.ref, 'refs/tags/orca-v') && steps.signing.outputs.signed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
