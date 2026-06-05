@@ -36,8 +36,11 @@ class TerminalSubscription {
 
 class _PendingTerminalSub {
   final TerminalOutputListener listener;
+  // The subscribe request params, retained so the subscription can be replayed
+  // verbatim after a reconnect (the desktop assigns a fresh streamId each time).
+  final Map<String, dynamic> params;
   int? streamId;
-  _PendingTerminalSub(this.listener);
+  _PendingTerminalSub(this.listener, this.params);
 }
 
 /// Encrypted JSON-RPC client for a desktop Orca runtime. Ported from desktop
@@ -340,24 +343,30 @@ class OrcaRpcClient {
     required TerminalOutputListener onFrame,
   }) {
     final id = _nextId();
-    _pendingTerminalSubs[id] = _PendingTerminalSub(onFrame);
+    final params = <String, dynamic>{
+      'terminal': terminalHandle,
+      'client': {'id': deviceToken, 'type': 'mobile'},
+      'viewport': ?viewport,
+      'capabilities': {'terminalBinaryStream': 1},
+    };
+    _pendingTerminalSubs[id] = _PendingTerminalSub(onFrame, params);
     () async {
       try {
         await _waitConnected();
       } catch (_) {
         return;
       }
-      _sendEncrypted({
-        'id': id,
-        'deviceToken': deviceToken,
-        'method': 'terminal.subscribe',
-        'params': {
-          'terminal': terminalHandle,
-          'client': {'id': deviceToken, 'type': 'mobile'},
-          'viewport': ?viewport,
-          'capabilities': {'terminalBinaryStream': 1},
-        },
-      });
+      // Guard against a reconnect having already replayed this subscription
+      // (or the caller cancelling) while we awaited connection.
+      if (_pendingTerminalSubs[id]?.streamId == null &&
+          _pendingTerminalSubs.containsKey(id)) {
+        _sendEncrypted({
+          'id': id,
+          'deviceToken': deviceToken,
+          'method': 'terminal.subscribe',
+          'params': params,
+        });
+      }
     }();
 
     return TerminalSubscription(() {
@@ -377,16 +386,21 @@ class OrcaRpcClient {
     });
   }
 
-  /// Re-arm terminal subscriptions after a reconnect (streamIds are reassigned
-  /// by the desktop, so only the request is replayed).
+  /// Re-arm terminal subscriptions after a reconnect. The desktop assigns a
+  /// fresh streamId on each subscribe, so the old streamId→listener bindings
+  /// are dropped and every active subscription's request is replayed under its
+  /// original request id (so the incoming `subscribed` ack re-binds it).
   void _resubscribeTerminals() {
-    final subs = _pendingTerminalSubs.entries.toList();
     _terminalListeners.clear();
-    for (final entry in subs) {
+    for (final entry in _pendingTerminalSubs.entries) {
       entry.value.streamId = null;
+      _sendEncrypted({
+        'id': entry.key,
+        'deviceToken': deviceToken,
+        'method': 'terminal.subscribe',
+        'params': entry.value.params,
+      });
     }
-    // The UI re-issues subscriptions on reconnect via the state stream; nothing
-    // to replay automatically here keeps the client simple and predictable.
   }
 
   /// Send text (and optionally Enter) to a terminal. Mirrors `terminal.send`.

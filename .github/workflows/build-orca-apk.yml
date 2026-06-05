@@ -51,11 +51,37 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+      - name: Configure release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ORCA_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ORCA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ORCA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ORCA_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No keystore secret set — building with debug signing." >&2
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/orca-release.jks
+          cat > android/key.properties <<EOF
+          storeFile=orca-release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Build release APK
         run: |
           flutter build apk --release \
             --build-name="${{ steps.version.outputs.version }}" \
             --build-number="${{ steps.version.outputs.build_number }}"
+
+      - name: Clean up signing material
+        if: always()
+        run: rm -f android/key.properties android/orca-release.jks
 
       - name: Rename APK
         run: |

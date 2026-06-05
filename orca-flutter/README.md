@@ -108,6 +108,47 @@ Installed apps pick it up on their next launch.
 > page). After that, in-app updates take over. Android will prompt the user to
 > allow installs from this app the first time it launches an installer.
 
+### ⚠️ Release signing (required for updates to install)
+
+Android only installs an update **over** an existing app when both APKs are
+signed with the **same key**. So every release must use one stable release
+keystore — a debug-signed build will fail to update with a signature mismatch.
+
+1. Generate a keystore once:
+   ```bash
+   keytool -genkey -v -keystore orca-release.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias orca
+   ```
+2. Add these **GitHub Actions secrets** (Settings → Secrets and variables → Actions):
+   | Secret | Value |
+   |---|---|
+   | `ORCA_KEYSTORE_BASE64` | `base64 -w0 orca-release.jks` |
+   | `ORCA_KEYSTORE_PASSWORD` | keystore password |
+   | `ORCA_KEY_ALIAS` | `orca` |
+   | `ORCA_KEY_PASSWORD` | key password |
+
+   CI decodes the keystore into `android/key.properties` at build time (and
+   deletes it afterward). If the secret is absent, CI falls back to debug
+   signing — fine for testing, but those builds can't be updated over.
+3. For **local** release builds, create `android/key.properties` (gitignored):
+   ```properties
+   storeFile=orca-release.jks
+   storePassword=…
+   keyAlias=orca
+   keyPassword=…
+   ```
+
+### Not done yet
+
+Honest status — the app passes `flutter analyze`/`flutter test` but has **not**
+been built into an APK or run against a live desktop Orca. Known gaps:
+
+- **Raw ANSI output** — terminal bytes render as plain text (escape codes
+  visible); a proper xterm/ANSI parser is still needed for colors + cursor.
+- **Paste-only pairing** — no QR scanner yet.
+- Protocol-version hard-block screen, terminal viewport/resize reporting, and
+  iOS polish are unimplemented.
+
 ---
 
 *Implements the Orca mobile protocol (MIT — https://github.com/stablyai/orca).*
