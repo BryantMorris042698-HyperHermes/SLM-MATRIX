@@ -1,0 +1,36 @@
+name: orca_mobile
+description: "Orca Mobile — a Flutter client for the Orca agent-fleet IDE. Pairs with a desktop Orca runtime over an end-to-end-encrypted WebSocket and streams agent terminals to your tablet."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # Curve25519 ECDH + XSalsa20-Poly1305 — matches Orca desktop's tweetnacl box.
+  pinenacl: ^0.6.0
+  # WebSocket transport (text + binary frames).
+  web_socket_channel: ^3.0.1
+  # Persisted host metadata (endpoint, public key, name).
+  shared_preferences: ^2.3.2
+  # Device pairing token is a secret — keep it out of plain prefs.
+  flutter_secure_storage: ^9.2.2
+  # In-app updates: query GitHub Releases + download the APK.
+  http: ^1.2.2
+  # Read the running app's version to compare against the latest release.
+  package_info_plus: ^8.0.2
+  # Download target directory.
+  path_provider: ^2.1.4
+  # Hand the downloaded APK to the Android package installer.
+  open_filex: ^4.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
