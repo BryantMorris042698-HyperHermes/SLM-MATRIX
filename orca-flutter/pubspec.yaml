@@ -26,6 +26,8 @@ dependencies:
   path_provider: ^2.1.4
   # Hand the downloaded APK to the Android package installer.
   open_filex: ^4.5.0
+  # Full ANSI/VT terminal emulator widget (colors, cursor, scrollback).
+  xterm: ^4.0.0
 
 dev_dependencies:
   flutter_test:

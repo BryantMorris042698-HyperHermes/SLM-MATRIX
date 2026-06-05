@@ -25,9 +25,11 @@ buildable-from-source Flutter implementation of the same wire protocol.
   `e2ee_hello → e2ee_ready → e2ee_auth → e2ee_authenticated`.
 - **List worktrees** (`worktree.ps`) with live status indicators.
 - **Stream terminals** — subscribes via `terminal.subscribe`, decodes the
-  binary terminal-stream frames, and renders live output.
-- **Send input** (`terminal.send`) including an accessory bar for `esc`, `tab`,
-  `^C`, arrows, etc.
+  binary terminal-stream frames, and renders them in a full **VT/ANSI terminal
+  emulator** (the `xterm` package) with colors, cursor positioning, and
+  scrollback. Reports the grid size back via `terminal.updateViewport`.
+- **Send input** (`terminal.send`) — type directly into the emulator, plus an
+  accessory bar for `esc`, `tab`, `^C`, `^L`, arrows, etc.
 - **Auto-reconnect** with the same tiered backoff as desktop.
 - **Self-update from GitHub Releases** (Android) — see below.
 
@@ -143,11 +145,8 @@ keystore — a debug-signed build will fail to update with a signature mismatch.
 Honest status — the app passes `flutter analyze`/`flutter test` but has **not**
 been built into an APK or run against a live desktop Orca. Known gaps:
 
-- **Raw ANSI output** — terminal bytes render as plain text (escape codes
-  visible); a proper xterm/ANSI parser is still needed for colors + cursor.
 - **Paste-only pairing** — no QR scanner yet.
-- Protocol-version hard-block screen, terminal viewport/resize reporting, and
-  iOS polish are unimplemented.
+- Protocol-version hard-block screen and iOS polish are unimplemented.
 
 ---
 

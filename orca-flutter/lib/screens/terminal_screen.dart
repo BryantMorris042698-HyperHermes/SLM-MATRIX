@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:xterm/xterm.dart';
 
 import '../transport/models.dart';
 import '../transport/rpc_client.dart';
-import '../transport/terminal_stream.dart';
+import '../transport/terminal_stream.dart' as ts;
 
-/// Streams a worktree's terminals to the tablet. Picks the active terminal
-/// (via `terminal.list`), subscribes for live output, and sends keystrokes
-/// back with `terminal.send`.
+/// Streams a worktree's terminals to the tablet using a full VT/ANSI emulator
+/// (xterm). Picks the active terminal via `terminal.list`, subscribes for live
+/// output, decodes the binary terminal-stream frames into the emulator, and
+/// sends keystrokes back with `terminal.send`.
 class TerminalScreen extends StatefulWidget {
   final OrcaRpcClient client;
   final Worktree worktree;
@@ -22,30 +24,34 @@ class TerminalScreen extends StatefulWidget {
 }
 
 class _TerminalScreenState extends State<TerminalScreen> {
-  final _scrollController = ScrollController();
-  final _inputController = TextEditingController();
-  final StringBuffer _buffer = StringBuffer();
+  late Terminal _terminal;
 
   List<TerminalInfo> _terminals = [];
   TerminalInfo? _active;
   TerminalSubscription? _subscription;
-  String _output = '';
   bool _loading = true;
   String? _error;
+  int _lastCols = 0;
+  int _lastRows = 0;
 
   @override
   void initState() {
     super.initState();
+    _terminal = _newTerminal();
     _loadTerminals();
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
-    _scrollController.dispose();
-    _inputController.dispose();
     super.dispose();
   }
+
+  Terminal _newTerminal() => Terminal(
+        maxLines: 10000,
+        onOutput: _sendInput,
+        onResize: _onResize,
+      );
 
   Future<void> _loadTerminals() async {
     setState(() {
@@ -93,57 +99,60 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _attach(TerminalInfo terminal) {
     _subscription?.cancel();
-    _buffer.clear();
     setState(() {
       _active = terminal;
-      _output = '';
+      _terminal = _newTerminal(); // fresh emulator state per terminal
     });
     _subscription = widget.client.subscribeTerminal(
       terminalHandle: terminal.handle,
+      viewport: (_lastCols > 0 && _lastRows > 0)
+          ? {'cols': _lastCols, 'rows': _lastRows}
+          : null,
       onFrame: _onFrame,
     );
   }
 
-  void _onFrame(TerminalStreamFrame frame) {
+  void _onFrame(ts.TerminalStreamFrame frame) {
     switch (frame.opcode) {
-      case TerminalStreamOpcode.snapshotStart:
-        _buffer.clear();
+      case ts.TerminalStreamOpcode.snapshotStart:
+        // RIS — full reset so the replayed snapshot paints onto a clean screen.
+        _terminal.write('\x1bc');
         break;
-      case TerminalStreamOpcode.output:
-      case TerminalStreamOpcode.snapshotChunk:
-        _buffer.write(frame.text);
+      case ts.TerminalStreamOpcode.output:
+      case ts.TerminalStreamOpcode.snapshotChunk:
+        _terminal.write(frame.text);
         break;
-      case TerminalStreamOpcode.snapshotEnd:
-      case TerminalStreamOpcode.resized:
+      case ts.TerminalStreamOpcode.snapshotEnd:
+      case ts.TerminalStreamOpcode.resized:
         break;
-      case TerminalStreamOpcode.error:
-        _buffer.write('\n[stream error] ${frame.text}\n');
+      case ts.TerminalStreamOpcode.error:
+        _terminal.write('\r\n\x1b[31m[stream error] ${frame.text}\x1b[0m\r\n');
         break;
-    }
-    if (mounted) {
-      setState(() => _output = _buffer.toString());
-      _scrollToBottom();
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
+  /// User keystrokes from the emulator (and accessory keys) → PTY.
+  void _sendInput(String data) {
+    final active = _active;
+    if (active == null) return;
+    widget.client.sendTerminalInput(active.handle, data).catchError((_) {
+      // Transport problems surface via the host screen's connection banner.
+      return const RpcResponse(id: '', ok: false);
     });
   }
 
-  Future<void> _send({String? text, bool enter = false}) async {
+  /// Report the rendered grid size so the desktop resizes the PTY to match.
+  void _onResize(int width, int height, int pixelWidth, int pixelHeight) {
+    if (width == _lastCols && height == _lastRows) return;
+    _lastCols = width;
+    _lastRows = height;
     final active = _active;
     if (active == null) return;
-    final payload = text ?? _inputController.text;
-    try {
-      await widget.client.sendTerminalInput(active.handle, payload, enter: enter);
-      if (text == null) _inputController.clear();
-    } catch (_) {
-      // The connection banner upstream surfaces transport problems.
-    }
+    widget.client.sendRequest('terminal.updateViewport', {
+      'terminal': active.handle,
+      'client': {'id': widget.client.deviceToken, 'type': 'mobile'},
+      'viewport': {'cols': width, 'rows': height},
+    }).catchError((_) => const RpcResponse(id: '', ok: false));
   }
 
   @override
@@ -191,58 +200,23 @@ class _TerminalScreenState extends State<TerminalScreen> {
     return Column(
       children: [
         Expanded(
-          child: Container(
-            width: double.infinity,
-            color: Colors.black,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(12),
-              child: SelectableText(
-                _output.isEmpty ? '…' : _output,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12.5,
-                  color: Color(0xFFD0D0D0),
-                  height: 1.3,
-                ),
-              ),
-            ),
+          child: TerminalView(
+            _terminal,
+            autofocus: true,
+            backgroundOpacity: 1,
+            padding: const EdgeInsets.all(8),
+            theme: TerminalThemes.defaultTheme,
+            textStyle: const TerminalStyle(fontSize: 13),
           ),
         ),
-        _AccessoryBar(onKey: (seq) => _send(text: seq)),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _inputController,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(enter: true),
-                    decoration: const InputDecoration(
-                      hintText: 'Type a command…',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  onPressed: () => _send(enter: true),
-                  icon: const Icon(Icons.send),
-                ),
-              ],
-            ),
-          ),
-        ),
+        _AccessoryBar(onKey: _sendInput),
       ],
     );
   }
 }
 
-/// Common control keys that a soft keyboard can't easily produce.
+/// Common control keys that a soft keyboard can't easily produce. These are
+/// written straight to the PTY as their raw byte sequences.
 class _AccessoryBar extends StatelessWidget {
   final void Function(String sequence) onKey;
   const _AccessoryBar({required this.onKey});
@@ -255,33 +229,38 @@ class _AccessoryBar extends StatelessWidget {
       ('^C', '\x03'),
       ('^D', '\x04'),
       ('^Z', '\x1a'),
+      ('^L', '\x0c'),
       ('↑', '\x1b[A'),
       ('↓', '\x1b[B'),
       ('←', '\x1b[D'),
       ('→', '\x1b[C'),
     ];
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        children: [
-          for (final (label, seq) in keys)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-              child: OutlinedButton(
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  onKey(seq);
-                },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: const Size(0, 32),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 44,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          children: [
+            for (final (label, seq) in keys)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+                child: OutlinedButton(
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    onKey(seq);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 32),
+                  ),
+                  child: Text(label,
+                      style: const TextStyle(fontFamily: 'monospace')),
                 ),
-                child: Text(label, style: const TextStyle(fontFamily: 'monospace')),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
