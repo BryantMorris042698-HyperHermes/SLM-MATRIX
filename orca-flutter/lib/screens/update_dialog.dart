@@ -12,7 +12,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo update) async {
       content: SingleChildScrollView(
         child: Text(
           update.releaseNotes.isEmpty
-              ? 'A newer version of Orca Mobile is available on GitHub.'
+              ? 'A newer version of HyprOrca is available on GitHub.'
               : update.releaseNotes,
         ),
       ),

@@ -101,7 +101,7 @@ class _HostsScreenState extends State<HostsScreen> {
         title: const Row(
           children: [
             Text('🐋  ', style: TextStyle(fontSize: 20)),
-            Text('Orca Mobile'),
+            Text('HyprOrca'),
           ],
         ),
         actions: [

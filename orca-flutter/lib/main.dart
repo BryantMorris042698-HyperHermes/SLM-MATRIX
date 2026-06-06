@@ -16,7 +16,7 @@ class OrcaApp extends StatelessWidget {
       brightness: Brightness.dark,
     );
     return MaterialApp(
-      title: 'Orca Mobile',
+      title: 'HyprOrca',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,
