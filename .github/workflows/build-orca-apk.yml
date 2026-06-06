@@ -87,12 +87,12 @@ jobs:
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk \
-             "dist/orca-mobile-${{ steps.version.outputs.version }}.apk"
+             "dist/hyprorca-${{ steps.version.outputs.version }}.apk"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orca-mobile-apk
+          name: hyprorca-apk
           path: orca-flutter/dist/*.apk
 
       - name: Publish GitHub Release
@@ -103,7 +103,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Orca Mobile ${{ steps.version.outputs.version }}
+          name: HyprOrca ${{ steps.version.outputs.version }}
           files: orca-flutter/dist/*.apk
           generate_release_notes: true
 
@@ -116,10 +116,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: orca-dev
-          name: Orca Mobile (dev build)
+          name: HyprOrca (dev build)
           prerelease: true
           body: |
-            Automated **debug-signed** dev build of Orca Mobile for sideloading.
+            Automated **debug-signed** dev build of HyprOrca for sideloading.
             Tap the `.apk` asset below on your Android device to install.
             (Allow "install unknown apps" when prompted.)
           files: orca-flutter/dist/*.apk
