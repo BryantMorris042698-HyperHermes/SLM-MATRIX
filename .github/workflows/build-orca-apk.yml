@@ -106,3 +106,20 @@ jobs:
           name: Orca Mobile ${{ steps.version.outputs.version }}
           files: orca-flutter/dist/*.apk
           generate_release_notes: true
+
+      - name: Publish dev prerelease (manual runs)
+        # On a manual run, publish/update an `orca-dev` prerelease so there's a
+        # direct, tappable .apk download link (no login, no zip). This build is
+        # debug-signed — fine to sideload, but uninstall before swapping to a
+        # signed release later (different signature).
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: orca-dev
+          name: Orca Mobile (dev build)
+          prerelease: true
+          body: |
+            Automated **debug-signed** dev build of Orca Mobile for sideloading.
+            Tap the `.apk` asset below on your Android device to install.
+            (Allow "install unknown apps" when prompted.)
+          files: orca-flutter/dist/*.apk
