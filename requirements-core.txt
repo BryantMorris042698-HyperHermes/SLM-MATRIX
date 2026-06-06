@@ -1,0 +1,25 @@
+# Minimal dependency set — only the packages the scripts actually import.
+# Far lighter than requirements.txt (which carries ~100 unused packages), so it
+# installs cleanly on constrained setups like Termux/Android.
+#
+# Mapping of imports -> packages:
+#   utils.py            openai, requests, python-dotenv, loguru
+#   MCTS_V7.py          numpy, requests, loguru
+#   Consistency_V4.py   requests, loguru
+#   MoA.py              datasets, pillow (PIL), rich, typer, python-dotenv, loguru
+#
+# Versions match requirements.txt for reproducibility.
+
+openai==1.52.0
+requests==2.32.3
+python-dotenv==1.0.1
+loguru==0.7.2
+numpy==2.1.2
+rich==13.9.2
+typer==0.12.5
+pillow==10.4.0
+
+# Heaviest dependency (pulls pyarrow/pandas/huggingface-hub). Only MoA.py needs
+# it. If it won't build on your device and you only run the MCTS pipeline
+# (MCTS_V7.py + Consistency_V4.py), you can safely omit this line.
+datasets==3.0.1
